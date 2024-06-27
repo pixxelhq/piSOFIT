@@ -67,11 +67,3 @@ ATM_LUTS = config(
 
 aerosol = config("AEROSOL", default="rural")
 
-# iso data paths that need storage on s3 #
-# 1. surface tmp json file: surface_tmp_filepath.json
-# 2. surface edited json file: surface_edit_filepath.json
-# 3. aster speclib csv file: jpl_aster.csv
-# 4. ucsb speclib csv file: ucsb_urban.csv
-# 5. aquatic speclib csv file: aquatic_rrs.csv
-# 6. 6SV1 RTM and path added to system environment variables (bash_profile)
-# 7. sRTMnet modtran emulator and path added to system environment variables (bash_profile)

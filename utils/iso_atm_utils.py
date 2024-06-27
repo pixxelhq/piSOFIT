@@ -145,25 +145,106 @@ def read_tif_file_from_s3(s3_url):
         print(f"Error reading {s3_url}: {e}")
         return None
 
-def extract_data(json_file_path):
+# def write_data_to_file(out_file_path, wavelengths, fwhms):
+#     print (f'Writing data to {out_file_path}')
+#     with open(out_file_path, "w") as file:
+#         for index, (wl, fwhm) in enumerate(zip(wavelengths, fwhms)):
+#             wl_um = float(wl)  # Convert string to float
+#             fwhm_um = float(fwhm)  # Convert string to float
+#             file.write(f"{index}\t{wl_um:.4f}\t{fwhm_um:.4f}\n")
 
-    print (f'Extracting data from {json_file_path}')
-    with open(json_file_path, 'r') as file:
-        data = json.load(file)
-    # data = read_json_file_from_s3(json_file_path)
-    
-    wavelengths = data['waves'].split(',')
-    fwhms = data['fwhm'].split(',')
-    
-    return wavelengths, fwhms
 
-def write_data_to_file(out_file_path, wavelengths, fwhms):
-    print (f'Writing data to {out_file_path}')
-    with open(out_file_path, "w") as file:
-        for index, (wl, fwhm) in enumerate(zip(wavelengths, fwhms)):
-            wl_um = float(wl)  # Convert string to float
-            fwhm_um = float(fwhm)  # Convert string to float
-            file.write(f"{index}\t{wl_um:.4f}\t{fwhm_um:.4f}\n")
+import json
+import xml.etree.ElementTree as ET
+
+def process_band_info(file_path, output_file):
+    # Determine file type (JSON or XML)
+    if file_path.endswith('.json'):
+        # Extract data from JSON file
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+        
+        wavelengths = [float(w) for w in data['waves'].split(',')]
+        fwhms = [float(f) for f in data['fwhm'].split(',')]
+        
+    elif file_path.endswith('.xml'):
+        # Extract data from XML file
+        tree = ET.parse(file_path)
+        root = tree.getroot()
+        
+        wavelengths = []
+        fwhms = []
+        
+        if root.find(".//Spectral_Bands_Information") is not None:
+            # Format with "Central_Wavelength" and "Bandwidth"
+            for band in root.findall(".//Bands"):
+                status = band.find("Status").text
+                if status == "1":
+                    wavelengths.append(float(band.find("Central_Wavelength").text))
+                    fwhms.append(float(band.find("Bandwidth").text))
+        else:
+            # Format with "Wavelength_list" and "FWHM_list"
+            wavelength_list = root.find(".//Wavelength_list").text.strip("{}").split(", ")
+            fwhm_list = root.find(".//FWHM_list").text.strip("{}").split(", ")
+            
+            wavelengths = [float(w) for w in wavelength_list]
+            fwhms = [float(f) for f in fwhm_list]
+    
+    else:
+        raise ValueError("Unsupported band_info file format. Only .json and .xml are supported.")
+    
+    # Save the data to a tab-separated .txt file
+    with open(output_file, 'w') as f:
+        for i, (wave, fwhm) in enumerate(zip(wavelengths, fwhms)):
+            f.write(f"{i}\t{wave:.4f}\t{fwhm:.4f}\n")
+
+
+
+
+
+# def extract_data(json_file_path):
+
+#     print (f'Extracting data from {json_file_path}')
+#     with open(json_file_path, 'r') as file:
+#         data = json.load(file)
+#     # data = read_json_file_from_s3(json_file_path)
+    
+#     wavelengths = data['waves'].split(',')
+#     fwhms = data['fwhm'].split(',')
+    
+#     return wavelengths, fwhms
+
+
+# def parse_xml(xml_file):
+#     tree = ET.parse(xml_file)
+#     root = tree.getroot()
+    
+#     wavelengths = []
+#     fwhms = []
+    
+#     if root.find(".//Spectral_Bands_Information") is not None:
+#         # Format with "Central_Wavelength" and "Bandwidth"
+#         for band in root.findall(".//Bands"):
+#             status = band.find("Status").text
+#             if status == "1":
+#                 wavelengths.append(float(band.find("Central_Wavelength").text))
+#                 fwhms.append(float(band.find("Bandwidth").text))
+#     else:
+#         # Format with "Wavelength_list" and "FWHM_list"
+#         wavelength_list = root.find(".//Wavelength_list").text.strip("{}").split(", ")
+#         fwhm_list = root.find(".//FWHM_list").text.strip("{}").split(", ")
+        
+#         wavelengths = [float(w) for w in wavelength_list]
+#         fwhms = [float(f) for f in fwhm_list]
+    
+#     return wavelengths, fwhms
+
+
+# def create_wavelength_file(wavelengths, fwhms, output_file):
+#     with open(output_file, 'w') as f:
+#         # f.write("index\tcenter_wave\tfwhm\n")
+#         for i, (wave, fwhm) in enumerate(zip(wavelengths, fwhms)):
+#             f.write(f"{i}\t{wave:.4f}\t{fwhm:.4f}\n")
 
 
 def convert_csv_to_envi(s3_key, local_path):
@@ -256,7 +337,10 @@ def l1b_preprocess(conf):
         data = rioxarray.open_rasterio(conf.loc_filepath_local)
         latitude = data[0].data
         longitude = data[1].data
-        elevation = data[3].data
+        try:
+            elevation = data[3].data
+        except:
+            elevation = data[2].data
 
         lat_mean = np.nanmean(latitude)
         lon_mean = np.nanmean(longitude)

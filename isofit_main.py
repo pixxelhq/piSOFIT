@@ -9,7 +9,7 @@ import numpy as np
 import isofit.utils.template_construction as tmpl
 from isofit.utils import surface_model
 from types import SimpleNamespace
-from utils.iso_atm_utils import extract_data, write_data_to_file, convert_csv_to_envi, l1b_preprocess, download_from_s3, upload_files_to_s3
+from utils.iso_atm_utils import process_band_info, convert_csv_to_envi, l1b_preprocess, download_from_s3, upload_files_to_s3
 from utils.apply_oe import apply_oe
 
 
@@ -26,7 +26,7 @@ def iso_model_init(l0_local_folderpath, l1b_dir):
     local_wdir = home_dir / img_name
     local_wdir.mkdir(parents=True, exist_ok=True)
 
-    # Check and find metadata path
+    # Check and find path
     def check_path(path, key):
         if path:
             filepath = path[0]
@@ -35,6 +35,27 @@ def iso_model_init(l0_local_folderpath, l1b_dir):
         else:
             print(f"{key} file not found")
             return None
+
+    # find correct band info file
+    def waves_info_path(wdir, local_wdir, name):
+        # Attempt to find the JSON metadata file first
+        json_path = fs.glob(f'{wdir}/to_tif_metadata*.json')
+        if json_path:
+            filepath = json_path[0]
+            print(f"{name} file found: {filepath}")
+            local = local_wdir / "to_tif_metadata.json"
+            return f's3://{filepath}', local
+        else:
+            # Attempt to find the XML file if the JSON file is not found
+            xml_path = fs.glob(f'{wdir}/boa_rfl/product/*L1B*.xml')
+            if xml_path:
+                filepath = xml_path[0]
+                print(f"{name} file found: {filepath}")
+                local = local_wdir / "to_tif_metadata.xml"
+                return f's3://{filepath}', local
+            else:
+                print(f"{name} file not found")
+                return None
 
     # Construct the correct bucket name and key
     bucket_name = boa_rfl_wdir.split('/')[2]
@@ -49,10 +70,12 @@ def iso_model_init(l0_local_folderpath, l1b_dir):
     # satellite_id = l0_meta["satellite_id"].split("-")
     # satellite_id = f"{satellite_id[0]}{int(satellite_id[1])}"
     image_id = l0_meta["image_id"]
-    to_tif_metadata = fs.glob(f'{boa_rfl_wdir}/to_tif_metadata*.json')
-    to_tif_metadata_filepath = check_path(to_tif_metadata, "to_tif_metadata")
-    to_tif_metadata_local = local_wdir / "to_tif_metadata.json"
-    download_from_s3(to_tif_metadata_filepath, str(to_tif_metadata_local))
+
+    # to_tif_metadata = fs.glob(f'{boa_rfl_wdir}/to_tif_metadata*.json')
+    # to_tif_metadata_filepath = check_path(to_tif_metadata, "to_tif_metadata")
+    wavelengths_filepath, wavelengths_local_filepath = waves_info_path(boa_rfl_wdir, local_wdir, "band_info")
+    # to_tif_metadata_local = local_wdir / "to_tif_metadata.json"
+    download_from_s3(wavelengths_filepath, str(wavelengths_local_filepath))
     acquisition_date = l0_meta["time_of_capture"]
     iso_data_filepath = local_wdir / "isofit"
     iso_data_filepath.mkdir(parents=True, exist_ok=True)
@@ -89,7 +112,7 @@ def iso_model_init(l0_local_folderpath, l1b_dir):
     surface_filepath = iso_data_filepath / "surface.mat"
 
     # emulator path
-    emulator_base = "/home/ray/sRTMnet_v100/sRTMnet_v100.h5"
+    emulator_base = "/Users/jeremy/sRTMnet_v100/sRTMnet_v100.h5"
 
     # surface paths 
     bucket_name = "d-ipr-services-s3-01"
@@ -118,8 +141,8 @@ def iso_model_init(l0_local_folderpath, l1b_dir):
 
     atm_cnfg_init = SimpleNamespace(
         working_directory=str(iso_data_filepath),
-        to_tif_meta_filepath=to_tif_metadata_filepath,
-        to_tif_meta_local_filepath = str(to_tif_metadata_local),
+        to_tif_meta_filepath=wavelengths_filepath,
+        to_tif_meta_local_filepath = str(wavelengths_local_filepath),
         l0_meta_filepath=l0_meta_filepath,
         l0_meta_local_filepath=str(l0_meta_local),
         iso_data_filepath=str(iso_data_filepath),
@@ -199,8 +222,10 @@ def preprocess(atm_cnfg):
     atm_cnfg = json.loads(atm_cnfg, object_hook=lambda d: SimpleNamespace(**d))
 
     # build wavelength file
-    wavelengths, fwhms = extract_data(atm_cnfg.to_tif_meta_local_filepath)
-    write_data_to_file(atm_cnfg.wavelength_path, wavelengths, fwhms)
+    # wavelengths, fwhms = extract_data(atm_cnfg.to_tif_meta_local_filepath)
+    # write_data_to_file(atm_cnfg.wavelength_path, wavelengths, fwhms)
+    process_band_info(atm_cnfg.to_tif_meta_local_filepath, atm_cnfg.wavelength_path)
+
 
     # convert surface csvs to envi
     # convert surface aster csv
